@@ -19,11 +19,12 @@ const ResearcherOutputSchema = z.object({
     .array(
       z.object({
         statement: z.string().trim().min(1).max(1500),
-        source_url: z.string().trim().min(1),
+        source_id: z.string().trim().min(1).optional(),
+        source_url: z.string().trim().min(1).optional(),
         quote: z.string().trim().min(1).max(1500),
         confidence: z.enum(['high', 'medium', 'low']).default('medium'),
         kind: z.enum(['fact', 'inference']).default('fact'),
-      }),
+      }).refine((fact) => Boolean(fact.source_id || fact.source_url), 'source_id veya source_url gerekli'),
     )
     .max(100)
     .default([]),
@@ -35,8 +36,9 @@ const ResearcherOutputSchema = z.object({
           .array(
             z.object({
               statement: z.string().trim().min(1).max(1000),
-              source_url: z.string().trim().min(1),
-            }),
+              source_id: z.string().trim().min(1).optional(),
+              source_url: z.string().trim().min(1).optional(),
+            }).refine((position) => Boolean(position.source_id || position.source_url), 'source_id veya source_url gerekli'),
           )
           .min(2)
           .max(6),
@@ -126,11 +128,11 @@ KURALLAR (kesinlikle uy):
 1. YALNIZCA aşağıdaki kaynaklarda geçen bilgileri kullan. Kendi genel bilgini, ezberini veya tahminini ASLA ekleme.
 2. Her olgu için kaynaktan birebir veya birebire yakın kısa bir alıntı (quote) ver. Alıntı kaynak metninde aynen geçmiyorsa o olguyu yazma.
 3. Kaynaklarda çelişen bilgi varsa uzlaştırma; contradictions alanına iki tarafı da kaynaklarıyla yaz.
-4. source_url alanına olgunun geldiği kaynağın URL'sini (yapıştırılmış metin için "yapıştırılmış: BAŞLIK" biçiminde başlığı) aynen yaz.
+4. Her olgu ve çelişki konumu için source_id alanına verilen KAYNAK_ID değerini AYNEN kopyala. source_url alanı gerekmez; kimlik uydurma.
 5. kind: "fact" = kaynakta doğrudan yazan bilgi; "inference" = kaynaktan yapılan akıl yürütme/çıkarım (bunu açıkça belirt).
 6. confidence: kaynağın otoritesi ve alıntının açıklığına göre high/medium/low.
 7. Yanıtın SADECE JSON olsun; açıklama, markdown veya kod bloğu ekleme.
-ŞEMA: {"facts":[{"statement":string,"source_url":string,"quote":string,"confidence":"high|medium|low","kind":"fact|inference"}],"contradictions":[{"topic":string,"positions":[{"statement":string,"source_url":string}],"note":string|null}],"notes":string|null}`;
+ŞEMA: {"facts":[{"statement":string,"source_id":string,"quote":string,"confidence":"high|medium|low","kind":"fact|inference"}],"contradictions":[{"topic":string,"positions":[{"statement":string,"source_id":string}],"note":string|null}],"notes":string|null}`;
 
 export interface ResearcherResult {
   facts: Fact[];
@@ -177,6 +179,7 @@ export async function runResearcher(
     const parsed = extractJson(raw, ResearcherOutputSchema, `Araştırma (parça ${b + 1}/${usedBatches.length})`);
 
     const urlToSource = new Map<string, Source>();
+    const idToSource = new Map(batch.sources.map((source) => [source.id, source]));
     for (const s of batch.sources) {
       if (s.url) {
         urlToSource.set(s.url, s);
@@ -186,8 +189,8 @@ export async function runResearcher(
     }
 
     for (const f of parsed.facts ?? []) {
-      const key = f.source_url.trim();
-      const source = urlToSource.get(key) ?? urlToSource.get(key.replace(/\/+$/, '')) ?? urlToSource.get(key.toLocaleLowerCase('tr'));
+      const key = f.source_url?.trim() ?? '';
+      const source = (f.source_id ? idToSource.get(f.source_id) : undefined) ?? (key ? urlToSource.get(key) ?? urlToSource.get(key.replace(/\/+$/, '')) ?? urlToSource.get(key.toLocaleLowerCase('tr')) : undefined);
       if (!source) {
         droppedUnknownSource++;
         continue;
@@ -224,8 +227,8 @@ export async function runResearcher(
     for (const c of parsed.contradictions ?? []) {
       const positions = c.positions
         .map((p) => {
-          const key = p.source_url.trim();
-          const source = urlToSource.get(key) ?? urlToSource.get(key.replace(/\/+$/, '')) ?? urlToSource.get(key.toLocaleLowerCase('tr'));
+          const key = p.source_url?.trim() ?? '';
+          const source = (p.source_id ? idToSource.get(p.source_id) : undefined) ?? (key ? urlToSource.get(key) ?? urlToSource.get(key.replace(/\/+$/, '')) ?? urlToSource.get(key.toLocaleLowerCase('tr')) : undefined);
           if (!source) return null;
           return { statement: p.statement, fact_id: null as string | null, source_url: source.url, source_title: source.title };
         })

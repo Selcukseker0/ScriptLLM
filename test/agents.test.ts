@@ -43,6 +43,23 @@ describe('Researcher', () => {
     expect(result.sources_used).toBe(1);
   });
 
+  it('model kaynak URL’sini bozsa bile KAYNAK_ID ile doğru kaynağa eşler', async () => {
+    const result = await runResearcher(makeRun(), fakeProvider(JSON.stringify({
+      facts: [{
+        statement: 'Türkiye Cumhuriyeti 1923 yılında ilan edildi.',
+        source_id: 'src-1',
+        quote: 'Türkiye Cumhuriyeti 1923 yılında ilan edildi',
+        confidence: 'high',
+        kind: 'fact',
+      }],
+      contradictions: [],
+      notes: null,
+    })));
+    expect(result.facts).toHaveLength(1);
+    expect(result.facts[0].source_id).toBe('src-1');
+    expect(result.facts[0].quote_verified).toBe(true);
+  });
+
   it('model alıntısı yanlışa yakınsa kaynaktaki örtüşen gerçek cümleyi alır ve güveni orta yapar', async () => {
     const result = await runResearcher(makeRun(), fakeProvider(JSON.stringify({
       facts: [{
