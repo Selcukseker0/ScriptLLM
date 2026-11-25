@@ -61,7 +61,7 @@ LLM_BASE_URL=http://localhost:11434/v1
 LLM_MODEL=llama3.1
 ```
 
-Ollama yerel ağ uç noktasında API anahtarı gerekmez. Performans/kullanılabilirlik makineye ve modele bağlıdır. Sağlayıcı hatasında otomatik başka modele geçilmez; işlem açık hata ile durur.
+Ollama yerel ağ uç noktasında API anahtarı gerekmez. Performans/kullanılabilirlik makineye ve modele bağlıdır. Yerel model yanıtları 10 dakikaya kadar beklenir (API sağlayıcıları için varsayılan 2 dakika); `.env` içinde `LLM_TIMEOUT_MS` ile değiştirilebilir. Yavaş makinelerde daha küçük/hafif bir instruct modeli deneyin. Sağlayıcı hatasında otomatik başka modele geçilmez; işlem açık hata ile durur.
 
 ## Web araması
 
