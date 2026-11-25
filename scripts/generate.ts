@@ -99,6 +99,17 @@ async function main(): Promise<void> {
 
   try {
     progress(resumeId ? `1/5 Mevcut kaynaklar yeniden işleniyor: ${topic}` : `1/5 Kaynak aranıyor: ${topic}`);
+    // Resume edilen eski çalışmalarda önce cache'lenmiş kaynakların güncel konu alakasını ölç;
+    // hepsi elenirse yeni ve daha iyi arama varyantlarıyla kaynak ekle.
+    for (const source of run.sources.filter((item) => item.status === 'ok' && item.contentText.trim())) {
+      const relevance = assessSourceRelevance(topic, source);
+      if (!relevance.relevant) {
+        source.status = 'failed';
+        source.error = `Konu alaka filtresinden geçmedi: ${relevance.reason}`;
+        progress(`  Önceden kayıtlı alakasız kaynak elendi: ${source.title}`);
+      }
+    }
+    saveRun(run);
     const search = getSearchProvider();
     const hasUsableSource = run.sources.some((source) => source.status === 'ok' && source.contentText.trim());
     if (!hasUsableSource) {

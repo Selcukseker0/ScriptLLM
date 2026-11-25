@@ -1,4 +1,6 @@
 import { getSearchEnvConfig, type SearchProviderName } from '../config.js';
+import { normalizeForMatch } from '../llm/json.js';
+import { assessSourceRelevance } from '../research/relevance.js';
 
 export interface SearchResult {
   title: string;
@@ -17,29 +19,37 @@ export interface SearchProvider {
 
 const SEARCH_STOPWORDS = new Set(['icin', 'için', 'hakkinda', 'hakkında', 'nedir', 'nasil', 'nasıl', 'ne', 've', 'ile', 'bir', 'bu', 'mi', 'mı', 'mu', 'mü', 'the', 'about']);
 
-/** Wikipedia başlık araması dar sorgularda boş dönebilir; noktalama ve eklerden arındırılmış varyantlar hazırla. */
+/** Wikipedia metin araması için konuyu ana kavramlara ayırır; ülke/çekim eklerini sorguya taşımamaya çalışır. */
 export function buildSearchQueries(topic: string): string[] {
+  const normalized = normalizeForMatch(topic);
+  const words = normalized.split(/\s+/).filter((word) => word.length > 2 && !SEARCH_STOPWORDS.has(word));
+  const hasEarthquake = words.some((word) => ['deprem', 'sismik', 'earthquake'].some((stem) => word.startsWith(stem)));
+  if (hasEarthquake) {
+    return ['deprem güvenliği', 'deprem', 'deprem hazırlığı', 'AFAD deprem', 'Kandilli deprem'];
+  }
   const stripped = topic
     .replace(/[’'](?:de|da|te|ta|den|dan|ten|tan)\b/gi, '')
     .replace(/[?!.,:;]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  const words = stripped.split(/\s+/).filter((word) => word.length > 2 && !SEARCH_STOPWORDS.has(word.toLocaleLowerCase('tr')));
-  const candidates = [topic.trim(), stripped, words.slice(0, 4).join(' '), words.slice(-2).join(' '), words.slice(0, 2).join(' ')];
+  const candidates = [words.slice(-3).join(' '), words.slice(0, 3).join(' '), stripped];
   return [...new Set(candidates.map((q) => q.trim()).filter((q) => q.length >= 2))].slice(0, 4);
 }
 
-/** Arama sağlayıcısında sonuç yoksa, Wikipedia için daha kısa konu varyantlarıyla şeffaf tekrar dener. */
+/** Wikipedia sonuçlarını başlık+snippet konu filtresinden geçirip, alakasız sonuç varken yeni varyantları dener. */
 export async function searchTopic(provider: SearchProvider, topic: string, count: number): Promise<{ results: SearchResult[]; queries: string[] }> {
-  const queries = provider.name === 'wikipedia' ? buildSearchQueries(topic) : [topic];
+  const queryOptions = provider.name === 'wikipedia' ? buildSearchQueries(topic) : [topic];
   const results: SearchResult[] = [];
+  const tried: string[] = [];
   const seen = new Set<string>();
   let lastError: unknown;
-  for (const query of queries) {
+  for (const query of queryOptions) {
+    tried.push(query);
     try {
       const found = await provider.search(query, count);
       for (const item of found) {
         if (seen.has(item.url)) continue;
+        if (provider.name === 'wikipedia' && !assessSourceRelevance(topic, { title: item.title, contentText: item.snippet }).relevant) continue;
         seen.add(item.url);
         results.push(item);
       }
@@ -49,7 +59,7 @@ export async function searchTopic(provider: SearchProvider, topic: string, count
     if (results.length >= Math.min(4, count)) break;
   }
   if (results.length === 0 && lastError) throw lastError;
-  return { results: results.slice(0, count), queries };
+  return { results: results.slice(0, count), queries: tried };
 }
 
 export class SearchError extends Error {
@@ -153,17 +163,29 @@ class WikipediaProvider implements SearchProvider {
     return { provider: this.name, configured: true, detail: this.detail };
   }
   private async wiki(host: string, query: string, count: number): Promise<SearchResult[]> {
-    const url = `https://${host}/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=${Math.min(count, 10)}&namespace=0&format=json`;
-    const data = (await fetchJson(url)) as [string, string[], string[], string[]];
-    const titles = data?.[1] || [];
-    const snippets = data?.[2] || [];
-    const urls = data?.[3] || [];
-    return titles.map((title, i) => ({
-      title,
-      url: urls[i] || `https://${host}/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`,
-      snippet: snippets[i] || '',
-      provider: this.name,
-    }));
+    const params = new URLSearchParams({
+      action: 'query', list: 'search', srsearch: query, srnamespace: '0',
+      srlimit: String(Math.min(count, 10)), srwhat: 'text', srprop: 'snippet', format: 'json', utf8: '1',
+    });
+    const url = `https://${host}/w/api.php?${params.toString()}`;
+    const data = (await fetchJson(url, { headers: { 'user-agent': 'ScriptLLM/1.0 (source research; https://github.com/Selcukseker0/ScriptLLM)', accept: 'application/json' } })) as {
+      query?: { search?: Array<{ title?: string; snippet?: string }> };
+    };
+    return (data.query?.search ?? [])
+      .filter((item) => item.title)
+      .map((item) => {
+        const title = item.title!;
+        const snippet = (item.snippet ?? '')
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+          .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
+        return {
+          title,
+          url: `https://${host}/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`,
+          snippet: snippet.slice(0, 500),
+          provider: this.name,
+        };
+      });
   }
   async search(query: string, count: number): Promise<SearchResult[]> {
     // Türkçe konu için yalnızca Türkçe Wikipedia kullan; İngilizce sonuçları

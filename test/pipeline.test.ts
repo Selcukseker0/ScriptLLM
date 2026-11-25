@@ -137,7 +137,7 @@ describe('arama sağlayıcıları', () => {
     vi.unstubAllGlobals();
   });
 
-  it('Wikipedia için dar sorgu boşsa daha kısa konu varyantlarıyla tekrar dener', async () => {
+  it('Wikipedia aramasında alakasız Türkiye başlıklarını filtreleyip deprem varyantına geçer', async () => {
     const { searchTopic } = await import('../server/search/providers.js');
     const tried: string[] = [];
     const provider = {
@@ -146,13 +146,30 @@ describe('arama sağlayıcıları', () => {
       describe: () => ({ provider: 'wikipedia' as const, configured: true, detail: 'test' }),
       search: async (query: string) => {
         tried.push(query);
-        return query === 'deprem güvenliği' ? [{ title: 'Deprem güvenliği', url: 'https://tr.wikipedia.org/wiki/Deprem', snippet: '', provider: 'wikipedia' as const }] : [];
+        if (query === 'deprem güvenliği') return [{ title: 'Türkiye Devrimci İşçi Sendikaları', url: 'https://tr.wikipedia.org/wiki/Disk', snippet: 'Sendika tarihi ve işçi hareketleri.', provider: 'wikipedia' as const }];
+        if (query === 'deprem') return [{ title: 'Deprem', url: 'https://tr.wikipedia.org/wiki/Deprem', snippet: 'Deprem, yer kabuğundaki kırılmalar sonucu oluşan sismik olaydır.', provider: 'wikipedia' as const }];
+        return [];
       },
     };
     const result = await searchTopic(provider, "Türkiye'de deprem güvenliği", 8);
-    expect(result.results).toHaveLength(1);
-    expect(tried).toContain('deprem güvenliği');
-    expect(result.queries.length).toBeGreaterThan(1);
+    expect(result.results.map((item) => item.title)).toEqual(['Deprem']);
+    expect(tried.slice(0, 2)).toEqual(['deprem güvenliği', 'deprem']);
+    expect(tried).toHaveLength(5);
+  });
+
+  it('Türkçe Wikipedia anahtar arama API’sini kullanır ve HTML snippet’ini temizler', async () => {
+    vi.stubEnv('SEARCH_PROVIDER', 'wikipedia');
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input.toString());
+      expect(url.hostname).toBe('tr.wikipedia.org');
+      expect(url.searchParams.get('action')).toBe('query');
+      expect(url.searchParams.get('srsearch')).toBe('deprem');
+      return new Response(JSON.stringify({ query: { search: [{ title: 'Deprem', snippet: '<span class="searchmatch">Deprem</span> ve sismik hareketler.' }] } }), { status: 200 });
+    }));
+    const { getSearchProvider } = await import('../server/search/providers.js');
+    const result = await getSearchProvider().search('deprem', 5);
+    expect(result[0]).toMatchObject({ title: 'Deprem', url: 'https://tr.wikipedia.org/wiki/Deprem', snippet: 'Deprem ve sismik hareketler.' });
+    vi.unstubAllGlobals();
   });
 });
 
