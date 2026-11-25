@@ -22,6 +22,14 @@ describe('konu-kaynak alaka kapısı', () => {
     expect(result.matched.length).toBeGreaterThan(0);
   });
 
+  it('sendika metnindeki tekrarlı genel güvenlik kelimeleri deprem konusunu karşılamaz', () => {
+    const result = assessSourceRelevance('Türkiye deprem güvenliği', {
+      title: 'DİSK tarihi',
+      contentText: 'Türkiye Devrimci İşçi Sendikaları Konfederasyonu 1967 yılında kuruldu. İşçi sağlığı ve güvenliği için çalışmalar yaptı. İş güvenliği, güvenlik ve çalışma koşulları konularını ele aldı.',
+    });
+    expect(result.relevant).toBe(false);
+  });
+
   it('tek genel ülke adı geçmesi kaynak alaka kapısından geçirmez', () => {
     const result = assessSourceRelevance('Türkiye deprem güvenliği', {
       title: 'Türkiye’de sendikacılık',
