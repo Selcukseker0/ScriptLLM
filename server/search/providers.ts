@@ -166,16 +166,9 @@ class WikipediaProvider implements SearchProvider {
     }));
   }
   async search(query: string, count: number): Promise<SearchResult[]> {
-    // Önce Türkçe Wikipedia, yetmezse İngilizce ile tamamla
-    const half = Math.max(3, Math.ceil(count / 2));
-    const tr = await this.wiki('tr.wikipedia.org', query, half);
-    const remaining = count - tr.length;
-    if (remaining > 0) {
-      const en = await this.wiki('en.wikipedia.org', query, remaining);
-      const seen = new Set(tr.map((r) => r.url));
-      return [...tr, ...en.filter((r) => !seen.has(r.url))];
-    }
-    return tr;
+    // Türkçe konu için yalnızca Türkçe Wikipedia kullan; İngilizce sonuçları
+    // Türkçe arama sonuçlarına sessizce karıştırmak alakasız eşleşmelere yol açabiliyor.
+    return this.wiki('tr.wikipedia.org', query, count);
   }
 }
 

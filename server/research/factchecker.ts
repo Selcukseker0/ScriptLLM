@@ -3,6 +3,7 @@ import type { ResearchRun, ScriptSentence, FactCheckReport } from '../../shared/
 import { extractJson, normalizeForMatch } from '../llm/json.js';
 import { getLLMProvider } from '../llm/openaiCompatible.js';
 import type { LLMProvider } from '../llm/provider.js';
+import { assessSourceRelevance } from './relevance.js';
 
 export class FactCheckError extends Error {
   code: 'no_script' | 'llm_failed';
@@ -25,13 +26,14 @@ const CheckOutputSchema = z.object({
     .max(400),
 });
 
-const SYSTEM_PROMPT = `Sen titiz bir Türkçe doğrulama editörüsün. Sana SENARYO cümleleri ve her cümlenin dayandığı OLGU'lar (id, ifade, kaynak alıntısı) verilecek.
-Her cümle için SADECE verilen olgulara dayanarak değerlendirme yap:
-- supported: olgular cümleyi açıkça destekliyor.
-- unsupported: olgular cümleyi desteklemiyor veya cümle dayanakta olmayan bilgi içeriyor (uydurma sayı/tarih/isim dahil).
-- contradicted: cümle, dayandığı olgularla veya olguların kaynağıyla ÇELİŞİYOR.
-- uncertain: kısmen destekliyor ama belirsiz/eksik/çıkarım gerekiyor.
-Geçiş ya da bağlayıcı ifadeler (ör. "başlayalım", "gelelim konuya") için verdict: "supported" değil, "uncertain" kullan ve note: "bağlayıcı ifade" yaz.
+const SYSTEM_PROMPT = `Sen titiz bir Türkçe doğrulama editörüsün. Sana KONU, SENARYO cümleleri ve her cümlenin dayandığı OLGU'lar (id, ifade, kaynak adı, kaynak alıntısı) verilecek.
+Her cümle için şu iki soruyu ayrı ayrı sor: (1) İddia verilen alıntı/olgudan doğrudan çıkar mı? (2) İddia verilen konuyla gerçekten ilgili mi?
+- supported: yalnızca iddia hem konuya uygunsa hem de alıntı/olgu tarafından açıkça destekleniyorsa.
+- unsupported: dayanak yoksa, cümle sadece genel bir köprü/bağ kuruyorsa, kaynakta olmayan nedensellik/özne/eylem ekliyorsa veya cümle konudan sapıyorsa. Kaynağın geçerli olması tek başına cümleyi desteklemez.
+- contradicted: cümle dayandığı olgu veya kaynakla çelişiyorsa.
+- uncertain: kısmen destekliyor ama belirsiz/eksik/çıkarım gerekiyorsa.
+Bir fact_id'ye bağlanmış olması, cümlenin otomatik desteklendiği anlamına gelmez. Bir olgudan yeni bir nedensel iddia, kurum eylemi veya tarihsel bağ türetme.
+Geçiş ya da bağlayıcı ifadeler için supported kullanma; note alanında nedenini yaz.
 Yanıt SADECE JSON: {"results":[{"id":string,"verdict":"supported|unsupported|contradicted|uncertain","note":string|null}]}`;
 
 /** Metindeki sayıları (rakam grupları) çıkarır — dayanak olmadan uydurma sayı avı */
@@ -63,6 +65,7 @@ export async function runFactChecker(run: ResearchRun, provider: LLMProvider = g
   }
 
   const factById = new Map(run.facts.map((f) => [f.fact_id, f]));
+  const sourceById = new Map(run.sources.map((source) => [source.id, source]));
   const deterministic = new Map<string, { verdict: ScriptSentence['check']; note: string | null }>();
 
   for (const sentence of run.script.sentences) {
@@ -79,6 +82,15 @@ export async function runFactChecker(run: ResearchRun, provider: LLMProvider = g
     const notApproved = cited.filter((f) => f && f.status !== 'approved');
     if (notApproved.length > 0) {
       deterministic.set(sentence.id, { verdict: 'unsupported', note: `Onaylanmamış olguya dayanıyor: ${notApproved.map((f) => `${f!.fact_id} (${f!.status === 'rejected' ? 'reddedildi' : 'beklemede'})`).join(', ')}.` });
+      continue;
+    }
+    const irrelevant = cited.filter((f) => {
+      if (!f) return false;
+      const source = sourceById.get(f.source_id);
+      return !source || source.status !== 'ok' || !assessSourceRelevance(run.topic, source).relevant;
+    });
+    if (irrelevant.length > 0) {
+      deterministic.set(sentence.id, { verdict: 'unsupported', note: `Konu uyumu doğrulanamadı: dayanak kaynağı “${irrelevant.map((f) => f!.source_title).join(', ')}” konu için yeterince alakalı değil veya erişilebilir kaynak kaydı yok.` });
       continue;
     }
     // Sayı kontrolü: cümledeki sayılar dayanak metinlerinde geçiyor mu?
@@ -109,7 +121,7 @@ export async function runFactChecker(run: ResearchRun, provider: LLMProvider = g
     .map((s) => `${s.id} [${s.fact_ids.join(',') || 'dayanak yok'}]: ${s.text}`)
     .join('\n');
 
-  const userPrompt = `OLGULAR:\n${factDigest || '(hiç dayanak verilememiş)'}\n\nSENARYO CÜMLELERİ:\n${sentenceDigest}\n\nJSON üret.`;
+  const userPrompt = `KONU: ${run.topic}\n\nOLGULAR:\n${factDigest || '(hiç dayanak verilememiş)'}\n\nSENARYO CÜMLELERİ:\n${sentenceDigest}\n\nHer cümlenin hem konu uyumunu hem doğrudan alıntı desteğini değerlendir. JSON üret.`;
 
   let llmResults: Map<string, { verdict: 'supported' | 'unsupported' | 'contradicted' | 'uncertain'; note: string | null }> | null = null;
   let llmError: string | null = null;

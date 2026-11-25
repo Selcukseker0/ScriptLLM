@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import type { ResearchRun, ScriptSentence } from '../../shared/schema.js';
-import { extractJson } from '../llm/json.js';
+import { extractJson, normalizeForMatch } from '../llm/json.js';
 import { getLLMProvider } from '../llm/openaiCompatible.js';
 import type { LLMProvider } from '../llm/provider.js';
 
 export class ScriptwriterError extends Error {
-  code: 'no_approved_facts' | 'llm_failed';
+  code: 'no_approved_facts' | 'llm_failed' | 'english_residue';
   constructor(code: ScriptwriterError['code'], message: string) {
     super(message);
     this.name = 'ScriptwriterError';
@@ -34,7 +34,7 @@ export function estimateWords(targetSeconds: number): number {
   return Math.round(targetSeconds * WORDS_PER_SECOND);
 }
 
-const SYSTEM_PROMPT = `Sen Türkçe bir YouTube videosu senaryo yazarısın. Yalnızca sana verilen OLGULAR listesini kullanarak seslendirme metni yazacaksın.
+const SYSTEM_PROMPT = `Sen Türkçe video anlatım senaryosu yazarsın. Yalnızca sana verilen OLGULAR listesini kullanarak doğal, bütünüyle Türkçe bir metin yazacaksın. İngilizce kelime, yarı çevrilmiş ifade veya İngilizce iyelik/çekim kalıntısı bırakma; kaynak başlığı yabancı dildeyse Türkçe anlat, özel adları olduğu gibi koru.
 KURALLAR (kesinlikle uy):
 1. Her cümle SADECE verilen olgulara dayanır; olgularda olmayan bilgi, sayı, tarih, isim ekleme.
 2. Her cümlenin fact_ids alanına dayandığı olguların kimliklerini yaz (ör. ["F003","F007"]). Dayanağı olmayan geçiş cümlesi YAZMA — gerekiyorsa o cümleye de en yakın olguyu bağla.
@@ -42,6 +42,13 @@ KURALLAR (kesinlikle uy):
 4. Hedef kitle ve tona uy. Hedef süreye kabaca uy.
 5. Kaynaklar arasında çelişki varsa kesin hüküm verme; "kaynaklar bu konuda ayrılıyor" gibi açık bir ifade kullan.
 6. Yanıt SADECE JSON olsun. ŞEMA: {"title":string,"style_notes":string|null,"sentences":[{"text":string,"fact_ids":[string]}]}`;
+
+const ENGLISH_RESIDUE_WORDS = new Set(['coup', 'government', 'earthquake', 'security', 'safety', 'with', 'however', 'between', 'although', 'therefore', 'because', 'effort', 'people', 'years', 'country', 'was', 'were', 'from', 'their', 'which', 'while']);
+
+export function findEnglishResidue(text: string): string[] {
+  const tokens = normalizeForMatch(text).split(/\s+/);
+  return [...new Set(tokens.filter((token) => ENGLISH_RESIDUE_WORDS.has(token)))];
+}
 
 export interface ScriptwriterResult {
   title: string;
@@ -85,6 +92,10 @@ JSON üret.`;
 
   const raw = await provider.complete({ system: SYSTEM_PROMPT, user: userPrompt, json: true, temperature: 0.4 });
   const parsed = extractJson(raw, ScriptOutputSchema, 'Senaryo yazımı');
+  const englishResidue = [...new Set([parsed.title, ...parsed.sentences.map((sentence) => sentence.text)].flatMap(findEnglishResidue))];
+  if (englishResidue.length > 0) {
+    throw new ScriptwriterError('english_residue', `Model Türkçe dışı ifade üretti (${englishResidue.join(', ')}). Bu taslak terminale hazır senaryo olarak verilmedi. Türkçe yetkinliği daha yüksek bir model deneyin (ör. Ollama qwen2.5:7b).`);
+  }
 
   let droppedFactRefs = 0;
   const sentences: ScriptSentence[] = parsed.sentences.map((s, i) => {

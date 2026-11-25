@@ -8,7 +8,7 @@ Türkçe, kaynak odaklı araştırma ve senaryo hazırlama web uygulaması. Her 
 
 - Node.js 20 veya üzeri (Node 22 önerilir)
 - npm
-- Senaryo/araştırma/denetim için OpenAI-uyumlu LLM API erişimi **veya** yerelde çalışan Ollama modeli. Üç aşama da kullanıcı tarafından ayrı ayrı başlatılır.
+- Senaryo/araştırma/denetim için OpenAI-uyumlu LLM API erişimi **veya** yerelde çalışan Ollama modeli.
 - Web araması için ayrıca API anahtarı isteğe bağlıdır; anahtar olmadan sınırlı Wikipedia API sağlayıcısı kullanılabilir. URL ekleme ve metin yapıştırma her zaman kullanılabilir.
 
 ## Kurulum ve çalıştırma
@@ -67,7 +67,7 @@ Ollama yerel ağ uç noktasında API anahtarı gerekmez. Performans/kullanılabi
 
 - `TAVILY_API_KEY`: Tavily Search API — kullanım planı, kota ve ücretleri Tavily belirler.
 - `BRAVE_API_KEY`: Brave Search API — kullanım planı, kota ve ücretleri Brave belirler.
-- Anahtar yoksa Wikipedia API (Türkçe/İngilizce) sınırlı kapsamlı yardımcı arama olarak kullanılır; her konu için yeterli değildir.
+- Anahtar yoksa yalnızca Türkçe Wikipedia API kullanılır; kapsamı sınırlıdır. Boş aramada konu ifadesinin kısaltılmış varyantları otomatik denenir. İndirilen kaynaklar araştırmadan önce konu anahtar kavramlarıyla alaka filtresinden geçer; konuya uygun kaynak kalmazsa senaryo üretilmez.
 - `SEARCH_PROVIDER=tavily|brave|wikipedia|none` ile açık sağlayıcı seçilebilir. Sağlayıcı anahtarı eksikse UI bunu belirtir. Google SERP kazıma yapılmaz.
 - URL arama sonuçları yalnızca aday kaynak olarak eklenir. İçerik kullanılmadan önce HTTP üzerinden getirilir. Kaynağa erişilemiyorsa hata kaydı tutulur ve başarısız içerik araştırma girdisi sayılmaz.
 
@@ -96,9 +96,9 @@ npm start           # üretim sunucusu
 
 - LLM anahtarları yalnızca sunucu tarafındaki `.env` dosyasından okunur; `/api/config` yalnızca sağlayıcı/model durumu ve açıklama döndürür, sırları döndürmez.
 - URL getirici `http(s)` dışında protokolü ve yaygın localhost/özel IPv4/IPv6 hedeflerini engeller, yanıt boyutu/süresini sınırlar. Bu temel bir SSRF korumasıdır; DNS rebinding ve tüm bulut/IPv6 adresleme biçimlerine karşı kurumsal bir güvenlik duvarı olarak değerlendirilmemelidir. Yalnızca güvendiğiniz kaynak URL’lerini kullanın.
-- Alıntı eşlemesi metin normalizasyonu ve sözcük kapsama sezgisidir; alıntı doğrulaması anlam doğruluğunun kanıtı değildir. LLM fact-check de otomatik karar desteğidir, insan incelemesinin yerine geçmez.
+- Kaynak alaka kapısı başlık/gövde anahtar kavram eşleşmesine dayalı sezgisel filtredir; alakasız kaynakları elemek için tasarlanmıştır ancak bağlamsal doğruluğun garantisi değildir ve bazı uygun kaynakları da eleyebilir. Alıntı eşlemesi metin normalizasyonu ve sözcük kapsama sezgisidir; alıntı doğrulaması iddianın anlamsal doğruluğunun kanıtı değildir. Fact-check konu uyumunu ve alıntı desteğini ayrı değerlendirir, fakat yine de otomatik karar desteğidir; insan incelemesinin yerine geçmez.
 - Arama API’leri sınırlı sonuç verir; Wikipedia tek başına yeterli olmayabilir. Model yalnızca getirilen kaynak içeriklerinden olgu çıkarmaya yönlendirilir; kaynak bulamazsa işlem durur.
-- Araştırma en fazla dört metin parçasında ve kullanıcı eylemiyle çağrı yapar; senaryo yazımı ve denetim ayrı kullanıcı adımlarıdır. Maliyet ve kota seçilen sağlayıcıya/modeline göre değişir.
+- Araştırma en fazla dört metin parçasında çalışır; otomatik CLI/akışta Researcher, Scriptwriter ve Fact-checker kullanıcı başına tek çalıştırmada ardışık çağrılır. Maliyet ve kota seçilen sağlayıcıya/modeline göre değişir.
 - Çelişkiler otomatik çözülmez; iki taraf kaynaklarıyla birlikte gösterilir. Olguların onay/red kararını kullanıcı verir.
 - Dosya deposu tek makinede yerel MVP kullanımı içindir. Kimlik doğrulama/çok kullanıcılı erişim, bulut veritabanı, eşzamanlı kullanıcı senkronizasyonu ve ekip izinleri bu sürümde yoktur. `data/` dizini yerel çalışma verisi içerir; sistem yedeği alın.
 

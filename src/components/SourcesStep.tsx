@@ -21,7 +21,7 @@ export default function SourcesStep({ run, config, onRunChanged, onAdvance }: So
   const [pasteTitle, setPasteTitle] = useState('');
   const [pasteText, setPasteText] = useState('');
 
-  const pendingCount = run.sources.filter((s) => s.kind === 'url' && s.status !== 'ok').length;
+  const pendingCount = run.sources.filter((s) => s.kind === 'url' && s.status !== 'ok' && !s.error?.startsWith('Konu alaka filtresinden geçmedi')).length;
   const okCount = run.sources.filter((s) => s.status === 'ok').length;
   const searchConfigured = config?.search.configured ?? false;
 
@@ -178,10 +178,12 @@ export default function SourcesStep({ run, config, onRunChanged, onAdvance }: So
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {run.sources.map((s) => (
+          {run.sources.map((s) => {
+            const irrelevant = Boolean(s.error?.startsWith('Konu alaka filtresinden geçmedi'));
+            return (
             <div key={s.id} className={`source-row${s.status === 'failed' ? ' failed' : ''}`}>
-              <span className={`source-status ${s.status === 'ok' ? 'st-ok' : s.status === 'failed' ? 'st-failed' : 'st-pending'}`} title={s.status === 'ok' ? 'İndirildi' : s.status === 'failed' ? 'Erişilemedi' : 'Bekliyor'}>
-                {s.status === 'ok' ? '✓' : s.status === 'failed' ? '✕' : '…'}
+              <span className={`source-status ${s.status === 'ok' ? 'st-ok' : s.status === 'failed' ? 'st-failed' : 'st-pending'}`} title={s.status === 'ok' ? 'İndirildi ve kullanılabilir' : irrelevant ? 'Konu ile alakasız, araştırmadan çıkarıldı' : s.status === 'failed' ? 'Erişilemedi' : 'Bekliyor'}>
+                {s.status === 'ok' ? '✓' : irrelevant ? '↛' : s.status === 'failed' ? '✕' : '…'}
               </span>
               <div className="source-body">
                 <div className="source-title">{s.title}</div>
@@ -191,11 +193,12 @@ export default function SourcesStep({ run, config, onRunChanged, onAdvance }: So
                   {s.status === 'ok' && <span>· {s.contentText.length.toLocaleString('tr-TR')} karakter{s.contentTruncated ? ' (kısaltıldı)' : ''}</span>}
                   {s.addedNote && <span>· {s.addedNote.slice(0, 120)}</span>}
                 </div>
-                {s.status === 'failed' && <div className="source-error">Erişilemedi: {s.error}</div>}
+                {s.status === 'failed' && <div className="source-error">{irrelevant ? 'Konu alaka kapısından geçmedi' : 'Erişilemedi'}: {s.error}</div>}
               </div>
               <button className="btn-icon" title="Kaynağı kaldır" aria-label="Kaynağı kaldır" onClick={() => void removeSource(s.id, s.title)}>🗑</button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
