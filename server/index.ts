@@ -281,7 +281,16 @@ app.post(
     }
     let run = getRun(id);
     try {
-      // Kullanıcı kaynak eklemediyse konuya göre arama yap. Arama yoksa uydurma kaynak üretme.
+      // Önbellekteki kaynaklar eski/yanlış aramadan gelmiş olabilir; konu dışı olanları önce dışla.
+      for (const source of run.sources.filter((item) => item.status === 'ok' && item.contentText.trim())) {
+        const relevance = assessSourceRelevance(run.topic, source);
+        if (!relevance.relevant) {
+          source.status = 'failed';
+          source.error = `Konu alaka filtresinden geçmedi: ${relevance.reason}`;
+        }
+      }
+      run = saveRun(run);
+      // Kullanılabilir alakalı kaynak yoksa taze/konu-özel arama yap. Hiçbir şey uydurma.
       if (!run.sources.some((source) => source.status === 'ok' && source.contentText.trim())) {
         const search = getSearchProvider();
         if (!search.isConfigured()) {
