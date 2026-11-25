@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runResearcher, ResearchAgentError } from '../server/research/researcher.js';
+import { runResearcher, ResearchAgentError, findSupportingQuote } from '../server/research/researcher.js';
 import { runScriptwriter, ScriptwriterError } from '../server/research/scriptwriter.js';
 import { runFactChecker, extractNumbers } from '../server/research/factchecker.js';
 import { LLMError } from '../server/llm/provider.js';
@@ -16,6 +16,12 @@ const RESEARCHER_JSON = JSON.stringify({
 });
 
 describe('Researcher', () => {
+  it('ifade ile yeterli örtüşen gerçek kaynak cümlesini bulur; sayıları da zorunlu tutar', () => {
+    const source = '1999 İzmit depremi 17 Ağustos tarihinde meydana geldi ve bölgede ciddi hasara yol açtı. Bu olay sonrasında yapı denetimi konusunda yeni çalışmalar yapıldı.';
+    expect(findSupportingQuote('1999 İzmit depremi 17 Ağustos tarihinde meydana geldi.', source)).toContain('1999 İzmit depremi 17 Ağustos');
+    expect(findSupportingQuote('1998 İzmit depremi 17 Ağustos tarihinde meydana geldi.', source)).toBeNull();
+  });
+
   it('kaynaksız çalışmada açık hata verir', async () => {
     const run = makeRun({ sources: [makeSource({ status: 'failed', contentText: '' })] });
     await expect(runResearcher(run, fakeProvider(RESEARCHER_JSON))).rejects.toMatchObject({ code: 'no_sources' });
@@ -35,6 +41,25 @@ describe('Researcher', () => {
     expect(result.facts.map((f) => f.fact_id)).toEqual(['F001', 'F002']);
     expect(result.research_notes).toContain('elendi');
     expect(result.sources_used).toBe(1);
+  });
+
+  it('model alıntısı yanlışa yakınsa kaynaktaki örtüşen gerçek cümleyi alır ve güveni orta yapar', async () => {
+    const result = await runResearcher(makeRun(), fakeProvider(JSON.stringify({
+      facts: [{
+        statement: 'Türkiye Cumhuriyeti 1923 yılında ilan edildi.',
+        source_url: 'https://example.com/a',
+        quote: 'kaynakta bulunmayan yanlış alıntı ve ifade',
+        confidence: 'high',
+        kind: 'fact',
+      }],
+      contradictions: [],
+      notes: null,
+    })));
+    expect(result.facts).toHaveLength(1);
+    expect(result.facts[0].quote_verified).toBe(true);
+    expect(result.facts[0].quote).toContain('Türkiye Cumhuriyeti 1923 yılında ilan edildi');
+    expect(result.facts[0].confidence).toBe('medium');
+    expect(result.facts[0].note).toContain('gerçek kaynak cümlesi');
   });
 
   it('model bozuk JSON dönerse bad_json hatası fırlatır (uydurma içerik eklenmez)', async () => {

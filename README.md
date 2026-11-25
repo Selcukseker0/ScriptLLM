@@ -43,6 +43,12 @@ Ya da konu argümanı olmadan çalıştırıp sorulduğunda terminale yazın:
 npm run generate
 ```
 
+Önceki bir çalışmada kaynaklar indirilmiş ancak model aşaması durmuşsa, kaynakları yeniden indirmeden kayıtlı çalışmayı yeniden işleyin:
+
+```bash
+npm run generate -- --resume <çalışma-id>
+```
+
 CLI otomatik olarak kaynak arar/indirir, kaynak alıntısı doğrulanmış doğrudan olgulardan senaryo üretir ve cümleleri denetler. Senaryo terminale `ANLATICI:` biçiminde, fact_id dayanaklarıyla basılır. Tam rapor ve kaynaklar `data/exports/` altına Markdown olarak kaydedilir. Fact-check uyarı verirse taslağı hazır saymaz; süreç uyarı koduyla çıkar. Yalnızca CLI kullanacaksanız `npm run dev` komutunu çalıştırmanız gerekmez.
 
 ## LLM yapılandırması
