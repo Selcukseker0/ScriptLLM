@@ -126,7 +126,7 @@ async function main(): Promise<void> {
     }
 
     progress('3/5 Kaynaklardan alıntılı olgular çıkarılıyor.');
-    const research = await runResearcher(run, llm);
+    const research = await runResearcher(run, llm, (current, total) => progress(`  Araştırma LLM çağrısı ${current}/${total} — Ollama modelinin hızına göre birkaç dakika sürebilir.`));
     run.facts = research.facts;
     run.contradictions = research.contradictions;
     run.research_notes = research.research_notes;

@@ -83,7 +83,7 @@ ${contradictionNote}
 
 JSON üret.`;
 
-  const raw = await provider.complete({ system: SYSTEM_PROMPT, user: userPrompt, json: true, temperature: 0.4, timeoutMs: 180_000 });
+  const raw = await provider.complete({ system: SYSTEM_PROMPT, user: userPrompt, json: true, temperature: 0.4 });
   const parsed = extractJson(raw, ScriptOutputSchema, 'Senaryo yazımı');
 
   let droppedFactRefs = 0;

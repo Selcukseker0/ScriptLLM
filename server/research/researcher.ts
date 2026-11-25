@@ -98,7 +98,11 @@ export interface ResearcherResult {
   sources_truncated: number;
 }
 
-export async function runResearcher(run: ResearchRun, provider: LLMProvider = getLLMProvider()): Promise<ResearcherResult> {
+export async function runResearcher(
+  run: ResearchRun,
+  provider: LLMProvider = getLLMProvider(),
+  onBatch?: (current: number, total: number) => void,
+): Promise<ResearcherResult> {
   const okSources = run.sources.filter((s) => s.status === 'ok' && s.contentText.trim().length > 0);
   if (okSources.length === 0) {
     throw new ResearchAgentError(
@@ -122,6 +126,7 @@ export async function runResearcher(run: ResearchRun, provider: LLMProvider = ge
   let unverifiedQuotes = 0;
 
   for (let b = 0; b < usedBatches.length; b++) {
+    onBatch?.(b + 1, usedBatches.length);
     const batch = usedBatches[b];
     const userPrompt = `KONU: ${run.topic}\nHEDEF KİTLE: ${run.audience}\n\n${sourceBlocks(batch)}\nYukarıdaki kaynaklar dışında HİÇBİR bilgiden yararlanma. JSON üret.`;
     const raw = await provider.complete({ system: SYSTEM_PROMPT, user: userPrompt, json: true, temperature: 0.2 });

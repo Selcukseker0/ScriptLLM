@@ -54,7 +54,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
         { provider: this.name },
       );
     }
-    const timeoutMs = req.timeoutMs ?? 120_000;
+    const configuredTimeout = Number(process.env.LLM_TIMEOUT_MS);
+    const defaultTimeout = Number.isFinite(configuredTimeout) && configuredTimeout >= 10_000
+      ? Math.min(configuredTimeout, 900_000)
+      : this.name === 'ollama' ? 600_000 : 120_000;
+    const timeoutMs = req.timeoutMs ?? defaultTimeout;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -96,7 +100,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     } catch (err) {
       if (err instanceof LLMError) throw err;
       if (err instanceof Error && err.name === 'AbortError') {
-        throw new LLMError('network', `${this.name}: Zaman aşımı (${Math.round(timeoutMs / 1000)}s). Model yanıt vermedi.`, { provider: this.name });
+        throw new LLMError('network', `${this.name}: Zaman aşımı (${Math.round(timeoutMs / 1000)}s). Model yanıt vermedi. Yerel Ollama'da daha küçük/hafif bir model deneyin veya .env içinde LLM_TIMEOUT_MS değerini artırın.`, { provider: this.name });
       }
       const msg = err instanceof Error ? err.message : String(err);
       throw new LLMError(
