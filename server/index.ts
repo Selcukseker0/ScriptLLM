@@ -6,7 +6,7 @@ import { IS_PROD, PORT, ensureDataDir } from './config.js';
 import { CreateRunRequestSchema, FactPatchSchema, SentencePatchSchema, type ResearchRun, type Source } from '../shared/schema.js';
 import { getLLMProvider } from './llm/openaiCompatible.js';
 import { LLMError } from './llm/provider.js';
-import { getSearchProvider, SearchError } from './search/providers.js';
+import { getSearchProvider, searchTopic, SearchError } from './search/providers.js';
 import { fetchSource, MAX_SOURCE_CHARS, normalizePlainText, FetchError } from './research/fetcher.js';
 import { runResearcher, ResearchAgentError } from './research/researcher.js';
 import { runScriptwriter, ScriptwriterError } from './research/scriptwriter.js';
@@ -287,7 +287,7 @@ app.post(
           sendError(res, 422, `Konu için kaynak bulunamadı: ${search.describe().detail}. URL ekleyin veya kaynak metni yapıştırın.`, 'no_search_provider');
           return;
         }
-        const results = await search.search(run.topic, 8);
+        const { results } = await searchTopic(search, run.topic, 8);
         const existing = new Set(run.sources.map((source) => source.url).filter(Boolean));
         for (const result of results) {
           if (existing.has(result.url) || run.sources.length >= 12) continue;

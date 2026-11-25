@@ -4,7 +4,7 @@ import readline from 'node:readline/promises';
 import { stdin, stdout, stderr } from 'node:process';
 import { DATA_DIR } from '../server/config.js';
 import { getLLMProvider } from '../server/llm/openaiCompatible.js';
-import { getSearchProvider } from '../server/search/providers.js';
+import { getSearchProvider, searchTopic } from '../server/search/providers.js';
 import { fetchSource, FetchError } from '../server/research/fetcher.js';
 import { runResearcher } from '../server/research/researcher.js';
 import { runScriptwriter } from '../server/research/scriptwriter.js';
@@ -84,9 +84,10 @@ async function main(): Promise<void> {
   try {
     progress(`1/5 Kaynak aranıyor: ${topic}`);
     const search = getSearchProvider();
-    if (!search.isConfigured()) throw new Error(`Arama sağlayıcısı kapalı (${search.describe().detail}). .env ile sağlayıcı seçin veya uygulama akışında URL/metin kaynağı ekleyin.`);
-    const results = await search.search(topic, 8);
-    if (results.length === 0) throw new Error('Arama sonuç vermedi. Konuyu daraltıp tekrar deneyin veya uygulama üzerinden URL/metin kaynağı sağlayın.');
+    if (!search.isConfigured()) throw new Error(`Arama sağlayıcısı kapalı (${search.describe().detail}). .env ile sağlayıcı seçin.`);
+    progress(`Arama sağlayıcısı: ${search.describe().detail}`);
+    const { results, queries } = await searchTopic(search, topic, 8);
+    if (results.length === 0) throw new Error(`${search.name} hiçbir sorgu varyantında kaynak döndürmedi: ${queries.map((query) => `“${query}”`).join(', ')}. Bu genellikle Wikipedia'nın konu başlığı bulamaması veya ağ erişimiyle ilgilidir; daha geniş arama için Tavily/Brave anahtarı ekleyin.`);
 
     const seen = new Set<string>();
     for (const result of results) {
