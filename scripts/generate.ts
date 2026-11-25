@@ -10,7 +10,7 @@ import { runResearcher } from '../server/research/researcher.js';
 import { runScriptwriter } from '../server/research/scriptwriter.js';
 import { runFactChecker } from '../server/research/factchecker.js';
 import { assessSourceRelevance } from '../server/research/relevance.js';
-import { newRunId, saveRun } from '../server/storage.js';
+import { getRun, newRunId, saveRun } from '../server/storage.js';
 import { toMarkdown } from '../server/export.js';
 import type { ResearchRun, Source } from '../shared/schema.js';
 
@@ -52,59 +52,77 @@ function printScenario(run: ResearchRun): void {
 }
 
 async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  const resumeId = args[0] === '--resume' ? args[1] : null;
+  if (args[0] === '--resume' && !resumeId) throw new Error('Kullanım: npm run generate -- --resume <çalışma-id>');
+  const topicArgs = resumeId ? args.slice(2) : args;
   const rl = readline.createInterface({ input: stdin, output: stdout });
-  let topic = process.argv.slice(2).join(' ').trim();
-  if (!topic) topic = (await rl.question('Senaryo konusu: ')).trim();
+  let topic = topicArgs.join(' ').trim();
+  if (!resumeId && !topic) topic = (await rl.question('Senaryo konusu: ')).trim();
   rl.close();
-  if (topic.length < 3) throw new Error('Konu en az 3 karakter olmalı.');
+  if (!resumeId && topic.length < 3) throw new Error('Konu en az 3 karakter olmalı.');
 
   const llm = getLLMProvider();
   if (!llm.isConfigured()) throw new Error('LLM ayarlı değil. .env içine LLM_API_KEY ekleyin veya LLM_PROVIDER=ollama yapılandırın.');
 
   const now = new Date().toISOString();
-  const run: ResearchRun = {
-    schema_version: 1,
-    id: newRunId(),
-    created_at: now,
-    updated_at: now,
-    topic,
-    audience: 'Genel izleyici',
-    tone: 'Bilgilendirici',
-    target_seconds: 600,
-    language: 'tr',
-    sources: [],
-    facts: [],
-    contradictions: [],
-    research_notes: null,
-    script: null,
-    factcheck: null,
-  };
+  let run: ResearchRun;
+  if (resumeId) {
+    run = getRun(resumeId);
+    topic = run.topic;
+    run.facts = [];
+    run.contradictions = [];
+    run.research_notes = null;
+    run.script = null;
+    run.factcheck = null;
+  } else {
+    run = {
+      schema_version: 1,
+      id: newRunId(),
+      created_at: now,
+      updated_at: now,
+      topic,
+      audience: 'Genel izleyici',
+      tone: 'Bilgilendirici',
+      target_seconds: 600,
+      language: 'tr',
+      sources: [],
+      facts: [],
+      contradictions: [],
+      research_notes: null,
+      script: null,
+      factcheck: null,
+    };
+  }
   saveRun(run);
   const progress = (message: string) => stderr.write(`${message}\n`);
 
   try {
-    progress(`1/5 Kaynak aranıyor: ${topic}`);
+    progress(resumeId ? `1/5 Mevcut kaynaklar yeniden işleniyor: ${topic}` : `1/5 Kaynak aranıyor: ${topic}`);
     const search = getSearchProvider();
-    if (!search.isConfigured()) throw new Error(`Arama sağlayıcısı kapalı (${search.describe().detail}). .env ile sağlayıcı seçin.`);
-    progress(`Arama sağlayıcısı: ${search.describe().detail}`);
-    const { results, queries } = await searchTopic(search, topic, 8);
-    if (results.length === 0) throw new Error(`${search.name} hiçbir sorgu varyantında kaynak döndürmedi: ${queries.map((query) => `“${query}”`).join(', ')}. Bu genellikle Wikipedia'nın konu başlığı bulamaması veya ağ erişimiyle ilgilidir; daha geniş arama için Tavily/Brave anahtarı ekleyin.`);
+    const hasUsableSource = run.sources.some((source) => source.status === 'ok' && source.contentText.trim());
+    if (!hasUsableSource) {
+      if (!search.isConfigured()) throw new Error(`Arama sağlayıcısı kapalı (${search.describe().detail}). .env ile sağlayıcı seçin.`);
+      progress(`Arama sağlayıcısı: ${search.describe().detail}`);
+      const { results, queries } = await searchTopic(search, topic, 8);
+      if (results.length === 0) throw new Error(`${search.name} hiçbir sorgu varyantında kaynak döndürmedi: ${queries.map((query) => `“${query}”`).join(', ')}. Bu genellikle Wikipedia'nın konu başlığı bulamaması veya ağ erişimiyle ilgilidir; daha geniş arama için Tavily/Brave anahtarı ekleyin.`);
 
-    const seen = new Set<string>();
-    for (const result of results) {
-      if (seen.has(result.url) || run.sources.length >= 12) continue;
-      seen.add(result.url);
-      const source: Source = {
-        id: newRunId().slice(0, 13), kind: 'url', url: result.url, title: result.title.slice(0, 300),
-        status: 'pending', error: null, contentText: '', contentTruncated: false, fetchedAt: null,
-        addedNote: `Konu arama sonucu (${search.name}): ${result.snippet.slice(0, 200)}`,
-      };
-      run.sources.push(source);
+      const seen = new Set(run.sources.map((source) => source.url).filter((url): url is string => Boolean(url)));
+      for (const result of results) {
+        if (seen.has(result.url) || run.sources.length >= 12) continue;
+        seen.add(result.url);
+        const source: Source = {
+          id: newRunId().slice(0, 13), kind: 'url', url: result.url, title: result.title.slice(0, 300),
+          status: 'pending', error: null, contentText: '', contentTruncated: false, fetchedAt: null,
+          addedNote: `Konu arama sonucu (${search.name}): ${result.snippet.slice(0, 200)}`,
+        };
+        run.sources.push(source);
+      }
+      saveRun(run);
     }
-    saveRun(run);
 
-    progress(`2/5 ${run.sources.length} kaynak indiriliyor; erişilemeyenler kullanılmayacak.`);
-    for (const source of run.sources) {
+    progress(`2/5 ${run.sources.length} kayıtlı kaynak kontrol ediliyor; yeni kaynaklar indiriliyor.`);
+    for (const source of run.sources.filter((item) => item.kind === 'url' && item.status !== 'ok' && !item.error?.startsWith('Konu alaka filtresinden geçmedi'))) {
       try {
         const fetched = await fetchSource(source.url!);
         source.title = fetched.title;
@@ -148,8 +166,14 @@ async function main(): Promise<void> {
       }
     }
     saveRun(run);
-    if (!run.facts.some((fact) => fact.status === 'approved')) {
-      throw new Error('Kaynaklarda doğrulanmış doğrudan olgu bulunamadı. Senaryo uydurulmadı.');
+    const approvedFacts = run.facts.filter((fact) => fact.status === 'approved');
+    if (approvedFacts.length === 0) {
+      const verifiedQuotes = run.facts.filter((fact) => fact.quote_verified).length;
+      const directVerified = run.facts.filter((fact) => fact.quote_verified && fact.kind === 'fact').length;
+      const reason = run.facts.length === 0
+        ? 'Model kaynaklı olgu çıkarmadı veya verdiği kaynak URL’leri eşleştirilemedi.'
+        : `aday olgu ${run.facts.length}, doğrulanmış alıntı ${verifiedQuotes}, doğrulanmış doğrudan olgu ${directVerified}`;
+      throw new Error(`Senaryoya geçirilecek doğrulanmış doğrudan olgu yok (${reason}). Senaryo uydurulmadı. Araştırma notu: ${run.research_notes ?? 'yok'}`);
     }
 
     progress('4/5 Yalnızca alıntısı doğrulanmış olgulardan Türkçe senaryo yazılıyor.');

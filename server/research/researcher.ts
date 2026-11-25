@@ -69,6 +69,49 @@ function buildBatches(sources: Source[]): Batch[] {
   return batches;
 }
 
+const QUOTE_STOPWORDS = new Set(['olan', 'olarak', 'daha', 'gibi', 'icin', 'için', 'hakkinda', 'hakkında', 'ile', 've', 'bir', 'bu', 'şu', 'the', 'from', 'that', 'with']);
+
+/** Modelin alıntısı kaynakta bulunmazsa, ifadeyle yeterli sözcük/sayı örtüşmesi olan gerçek kaynak cümlesini bulur. */
+export function findSupportingQuote(statement: string, sourceText: string): string | null {
+  const statementTokens = [...new Set(normalizeForQuote(statement).split(/\s+/).filter((token) => (token.length >= 4 || /^\d+$/.test(token)) && !QUOTE_STOPWORDS.has(token)))];
+  if (statementTokens.length === 0) return null;
+
+  const sentences = sourceText
+    .replace(/\r\n?/g, '\n')
+    .split(/(?<=[.!?])\s+|\n+/u)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 35 && part.length <= 1500);
+  const candidates = [...sentences];
+  for (let i = 0; i < sentences.length - 1; i++) {
+    const joined = `${sentences[i]} ${sentences[i + 1]}`;
+    if (joined.length <= 1500) candidates.push(joined);
+  }
+
+  let best: { quote: string; score: number } | null = null;
+  for (const quote of candidates) {
+    const quoteTokens = normalizeForQuote(quote).split(/\s+/);
+    const matches = statementTokens.filter((token) => quoteTokens.some((candidate) => token === candidate || (Math.min(token.length, candidate.length) >= 5 && (token.startsWith(candidate) || candidate.startsWith(token)))));
+    const coverage = matches.length / statementTokens.length;
+    const statementNumbers = statementTokens.filter((token) => /^\d+$/.test(token));
+    const numbersMatch = statementNumbers.every((number) => quoteTokens.includes(number));
+    const minMatches = Math.min(3, statementTokens.length);
+    if (!numbersMatch || matches.length < minMatches || coverage < 0.65) continue;
+    const score = coverage + (quote.length <= 500 ? 0.05 : 0);
+    if (!best || score > best.score) best = { quote, score };
+  }
+  return best?.quote.slice(0, 1500) ?? null;
+}
+
+function normalizeForQuote(text: string): string {
+  return text
+    .toLocaleLowerCase('tr')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[“”"'‘’«»()\[\]{}.,;:!?…–—\-/\\|*_=+`~]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function sourceBlocks(batch: Batch): string {
   return batch.sources
     .map(
@@ -124,6 +167,7 @@ export async function runResearcher(
   let factSeq = 0;
   let droppedUnknownSource = 0;
   let unverifiedQuotes = 0;
+  let recoveredQuotes = 0;
 
   for (let b = 0; b < usedBatches.length; b++) {
     onBatch?.(b + 1, usedBatches.length);
@@ -148,7 +192,18 @@ export async function runResearcher(
         droppedUnknownSource++;
         continue;
       }
-      const quoteOk = quoteAppearsIn(f.quote, source.contentText);
+      let quote = f.quote;
+      let quoteOk = quoteAppearsIn(quote, source.contentText);
+      let quoteRecovered = false;
+      if (!quoteOk) {
+        const sourceExcerpt = findSupportingQuote(f.statement, source.contentText);
+        if (sourceExcerpt && quoteAppearsIn(sourceExcerpt, source.contentText)) {
+          quote = sourceExcerpt;
+          quoteOk = true;
+          quoteRecovered = true;
+          recoveredQuotes++;
+        }
+      }
       if (!quoteOk) unverifiedQuotes++;
       factSeq += 1;
       allFacts.push({
@@ -157,12 +212,12 @@ export async function runResearcher(
         source_id: source.id,
         source_url: source.url,
         source_title: source.title,
-        quote: f.quote,
-        confidence: quoteOk ? (f.confidence ?? 'medium') : 'low',
+        quote,
+        confidence: !quoteOk ? 'low' : quoteRecovered ? 'medium' : (f.confidence ?? 'medium'),
         kind: !quoteOk ? 'unverified' : f.kind === 'inference' ? 'inference' : 'fact',
         quote_verified: quoteOk,
         status: 'pending',
-        note: null,
+        note: quoteRecovered ? 'Modelin alıntısı kaynakta bulunamadı; ifadeyle yüksek sözcük/sayı örtüşmesi olan gerçek kaynak cümlesi alıntı olarak kullanıldı.' : null,
       });
     }
 
@@ -183,7 +238,8 @@ export async function runResearcher(
   }
 
   if (droppedUnknownSource > 0) batchNotes.push(`${droppedUnknownSource} olgu, bilinmeyen/eşleşmeyen kaynak referansı verdiği için elendi.`);
-  if (unverifiedQuotes > 0) batchNotes.push(`${unverifiedQuotes} olgunun alıntısı kaynak metninde birebir bulunamadı; bu olgular "doğrulanamadı" (unverified) ve düşük güven olarak işaretlendi.`);
+  if (recoveredQuotes > 0) batchNotes.push(`${recoveredQuotes} olgu için model alıntısı bulunamadı; ifade ile yüksek sözcük/sayı örtüşmesi bulunan gerçek kaynak cümlesi alıntı olarak eşleştirildi ve güven orta ile sınırlandı.`);
+  if (unverifiedQuotes > 0) batchNotes.push(`${unverifiedQuotes} olgunun alıntısı ve destekleyici kaynak cümlesi doğrulanamadı; bu olgular "doğrulanamadı" (unverified) ve düşük güven olarak işaretlendi.`);
   for (const t of okSources) {
     if (t.contentTruncated) batchNotes.push(`"${t.title}" kaynak metni uzunluğu nedeniyle kısaltılmış olarak kullanıldı.`);
   }
