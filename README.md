@@ -29,6 +29,22 @@ npm start
 
 Üretim sunucusu `PORT` (varsayılan 5174) üzerinde API ve `dist/` arayüzünü birlikte sunar. Sunucu `0.0.0.0` üzerinde dinler. Çalışmalar yerel olarak `data/runs/<id>.json` dosyalarına atomik biçimde kaydedilir. Başka bir konum için `DATA_DIR` ayarlayın. `data/` ve `.env` Git’e alınmaz.
 
+### Tarayıcı açmadan terminalden senaryo üretme
+
+Web sayfası istemiyorsanız geliştirme sunucusu yerine CLI komutunu kullanın. Konuyu komutta verin:
+
+```bash
+npm run generate -- "Türkiye'de deprem güvenliği"
+```
+
+Ya da konu argümanı olmadan çalıştırıp sorulduğunda terminale yazın:
+
+```bash
+npm run generate
+```
+
+CLI otomatik olarak kaynak arar/indirir, kaynak alıntısı doğrulanmış doğrudan olgulardan senaryo üretir ve cümleleri denetler. Senaryo terminale `ANLATICI:` biçiminde, fact_id dayanaklarıyla basılır. Tam rapor ve kaynaklar `data/exports/` altına Markdown olarak kaydedilir. Fact-check uyarı verirse taslağı hazır saymaz; süreç uyarı koduyla çıkar. Yalnızca CLI kullanacaksanız `npm run dev` komutunu çalıştırmanız gerekmez.
+
 ## LLM yapılandırması
 
 ### OpenAI-uyumlu API
@@ -66,7 +82,8 @@ Ollama yerel ağ uç noktasında API anahtarı gerekmez. Performans/kullanılabi
 ## Komutlar
 
 ```bash
-npm run dev         # Vite + API geliştirme sunucuları
+npm run dev         # Vite + API geliştirme sunucuları (web arayüzü)
+npm run generate -- "Konu başlığı" # tarayıcı olmadan kaynaklı senaryo üret
 npm run dev:web     # yalnızca Vite
 npm run dev:server  # yalnızca API
 npm run typecheck   # server ve frontend TypeScript kontrolü
