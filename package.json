@@ -8,6 +8,7 @@
     "dev": "concurrently -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "tsx watch server/index.ts",
     "dev:web": "vite",
+    "generate": "tsx scripts/generate.ts",
     "build": "tsc --noEmit -p tsconfig.server.json && vite build",
     "start": "NODE_ENV=production tsx server/index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.json",
