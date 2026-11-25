@@ -90,6 +90,7 @@ export default function FactsStep({ run, onRunChanged, onAdvance }: FactsStepPro
 
       {error && <ErrorBanner message={error} onRetry={() => setError(null)} />}
       {notice && <InfoBanner tone="ok">{notice}</InfoBanner>}
+      {run.facts.some((fact) => fact.note?.includes('Otomatik akışta')) && <InfoBanner tone="info">Tek tık akışında yalnızca alıntısı kaynakta doğrulanmış doğrudan olgular senaryoya otomatik onaylandı. Buradan her birini inceleyebilir, düzenleyebilir veya reddedebilirsiniz.</InfoBanner>}
 
       <div className="toolbar">
         <button className="btn btn-primary" onClick={() => void doResearch()} disabled={busy || okSources === 0}>

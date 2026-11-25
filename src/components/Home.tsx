@@ -51,9 +51,9 @@ export default function Home({ onCreated }: HomeProps) {
             Her cümlesi <em>dayanağına</em> bağlı Türkçe senaryolar.
           </h1>
           <p className="hero-sub">
-            ScriptLLM; kaynakları bulur/indirir, olguları alıntılarıyla çıkarır, yalnızca <strong>onayladığınız</strong> olgulardan
-            senaryo yazar ve her cümleyi kaynağıyla yeniden denetler. Uydurma bilgiye yer yoktur — dayanağı olmayan bir iddia
-            asla “gerçekmiş” gibi yazılmaz.
+            Siz yalnızca konuyu girin. Otomatik ajan kaynak arar ve indirir, alıntısı doğrulanan olgulardan senaryo üretir,
+            ardından her cümleyi denetler. Sonuçları isterseniz sonradan inceleyip düzenleyebilirsiniz. Kaynak veya model
+            hatasında uydurma bilgiyle devam etmez; açıkça durur.
           </p>
           <div className="pipeline" aria-label="İş akışı">
             {[
@@ -84,7 +84,7 @@ export default function Home({ onCreated }: HomeProps) {
           }}
         >
           <h2 className="card-title">Yeni Araştırma</h2>
-          <p className="card-sub">Konuyu yazın; kaynakları şimdi ekleyin ya da sonra arayın.</p>
+          <p className="card-sub">Konuyu verin; ajan araştırma, senaryo ve denetimi otomatik çalıştırsın. URL/metin eklemek isteğe bağlıdır.</p>
 
           {error && <div style={{ marginBottom: 12 }}><ErrorBanner message={error} /></div>}
 
@@ -129,17 +129,17 @@ export default function Home({ onCreated }: HomeProps) {
           </div>
 
           <button className="btn btn-primary btn-block" type="submit" disabled={busy || topic.trim().length < 3} style={{ marginTop: 16 }}>
-            {busy ? <><Spinner /> Çalışma oluşturuluyor…</> : 'Araştırmayı Başlat →'}
+            {busy ? <><Spinner /> Ajan başlatılıyor…</> : 'Konuyu Ver ve Otomatik Başlat →'}
           </button>
         </form>
       </div>
 
       <div className="details-box">
-        <strong>Neden “ajan” yerine aşamalı akış?</strong>
+        <strong>Otomatik ama izlenebilir.</strong>
         <div style={{ marginTop: 4 }}>
-          Researcher (kaynak→olgu), Scriptwriter (onaylı olgu→senaryo) ve Fact-checker (senaryo→olgu karşılaştırması) ayrı, açık veri
-          şemalarıyla çalışır; aralarında serbest sohbet yoktur. Her aşamanın çıktısını görüp düzenlemeden bir sonrakine geçilmez —
-          böylece hata sessizce birikmez ve her iddianın izi sürülebilir.
+          Researcher (kaynak→olgu), Scriptwriter (doğrulanmış olgu→senaryo) ve Fact-checker (senaryo→olgu karşılaştırması) ayrı veri
+          şemalarıyla arka arkaya çalışır. Siz aşamaları tek tek başlatmak zorunda değilsiniz; tamamlanan tüm kaynakları, olguları,
+          cümle-dayanak eşleşmelerini ve uyarıları sonradan inceleyip düzenleyebilirsiniz.
         </div>
       </div>
     </div>
