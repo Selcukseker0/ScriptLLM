@@ -9,6 +9,7 @@ import { fetchSource, FetchError } from '../server/research/fetcher.js';
 import { runResearcher } from '../server/research/researcher.js';
 import { runScriptwriter } from '../server/research/scriptwriter.js';
 import { runFactChecker } from '../server/research/factchecker.js';
+import { assessSourceRelevance } from '../server/research/relevance.js';
 import { newRunId, saveRun } from '../server/storage.js';
 import { toMarkdown } from '../server/export.js';
 import type { ResearchRun, Source } from '../shared/schema.js';
@@ -120,10 +121,20 @@ async function main(): Promise<void> {
         progress(`  Kaynak atlandı: ${source.url} — ${source.error}`);
       }
     }
-    saveRun(run);
-    if (!run.sources.some((source) => source.status === 'ok' && source.contentText.trim())) {
-      throw new Error('Hiçbir kaynak getirilemedi. Uydurma içerikle devam edilmedi.');
+    for (const source of run.sources.filter((item) => item.status === 'ok')) {
+      const relevance = assessSourceRelevance(topic, source);
+      if (!relevance.relevant) {
+        source.status = 'failed';
+        source.error = `Konu alaka filtresinden geçmedi: ${relevance.reason}`;
+        progress(`  Alakasız kaynak elendi: ${source.title} — ${relevance.reason}`);
+      }
     }
+    saveRun(run);
+    const relevantSources = run.sources.filter((source) => source.status === 'ok' && source.contentText.trim());
+    if (relevantSources.length === 0) {
+      throw new Error('Kaynaklar indirildi ancak hiçbiri konu alaka filtresini geçemedi. Senaryo üretilmedi; daha uygun kaynaklar bulunmalı.');
+    }
+    progress(`${relevantSources.length} kaynak konu alaka filtresini geçti.`);
 
     progress('3/5 Kaynaklardan alıntılı olgular çıkarılıyor.');
     const research = await runResearcher(run, llm, (current, total) => progress(`  Araştırma LLM çağrısı ${current}/${total} — Ollama modelinin hızına göre birkaç dakika sürebilir.`));

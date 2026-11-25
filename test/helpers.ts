@@ -42,7 +42,7 @@ export function makeRun(overrides: Partial<ResearchRun> = {}): ResearchRun {
     id: 'testrun-0001',
     created_at: NOW,
     updated_at: NOW,
-    topic: 'Türkiye Cumhuriyeti’nin kuruluşu',
+    topic: 'Türkiye Cumhuriyeti ilanı',
     audience: 'Genel izleyici',
     tone: 'Bilgilendirici',
     target_seconds: 300,

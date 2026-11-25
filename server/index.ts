@@ -11,6 +11,7 @@ import { fetchSource, MAX_SOURCE_CHARS, normalizePlainText, FetchError } from '.
 import { runResearcher, ResearchAgentError } from './research/researcher.js';
 import { runScriptwriter, ScriptwriterError } from './research/scriptwriter.js';
 import { runFactChecker, FactCheckError } from './research/factchecker.js';
+import { assessSourceRelevance } from './research/relevance.js';
 import { deleteRun, getRun, listRuns, newRunId, saveRun, StorageError } from './storage.js';
 import { toJson, toMarkdown } from './export.js';
 
@@ -201,7 +202,7 @@ app.post(
   ah(async (req, res) => {
     const id = parseIdParam(req.params.id);
     const run = getRun(id);
-    const targets = run.sources.filter((s) => s.kind === 'url' && s.status !== 'ok');
+    const targets = run.sources.filter((s) => s.kind === 'url' && s.status !== 'ok' && !s.error?.startsWith('Konu alaka filtresinden geçmedi'));
     for (const source of targets) {
       try {
         const fetched = await fetchSource(source.url!);
@@ -302,7 +303,7 @@ app.post(
       }
 
       // Bekleyen URL'leri gerçekten indir; erişilemeyenler olgu çıkarmaya alınmaz.
-      for (const source of run.sources.filter((item) => item.kind === 'url' && item.status !== 'ok')) {
+      for (const source of run.sources.filter((item) => item.kind === 'url' && item.status !== 'ok' && !item.error?.startsWith('Konu alaka filtresinden geçmedi'))) {
         try {
           const fetched = await fetchSource(source.url!);
           source.title = fetched.title;
@@ -318,9 +319,16 @@ app.post(
           source.fetchedAt = new Date().toISOString();
         }
       }
+      for (const source of run.sources.filter((item) => item.status === 'ok')) {
+        const relevance = assessSourceRelevance(run.topic, source);
+        if (!relevance.relevant) {
+          source.status = 'failed';
+          source.error = `Konu alaka filtresinden geçmedi: ${relevance.reason}`;
+        }
+      }
       run = saveRun(run);
       if (!run.sources.some((source) => source.status === 'ok' && source.contentText.trim())) {
-        sendError(res, 422, 'Arama sonuçları eklendi ancak kaynak sayfaları getirilemedi. Kaynak hatalarını inceleyip URL/metin ekleyerek tekrar deneyin.', 'no_accessible_sources');
+        sendError(res, 422, 'Kaynaklar indirildi ancak hiçbiri konu alaka filtresini geçemedi. Senaryo üretilmedi; uygun kaynaklar ekleyip tekrar deneyin.', 'no_relevant_sources');
         return;
       }
 

@@ -62,9 +62,9 @@ export function getSearchEnvConfig(): SearchEnvConfig {
       ? { provider: 'brave', detail: 'Brave Search API' }
       : { provider: 'none', detail: 'SEARCH_PROVIDER=brave ayarlı ancak BRAVE_API_KEY eksik' };
   }
-  if (explicit === 'wikipedia') return { provider: 'wikipedia', detail: 'Türkçe/İngilizce Wikipedia API (anahtarsız, sınırlı)' };
+  if (explicit === 'wikipedia') return { provider: 'wikipedia', detail: 'Türkçe Wikipedia API (anahtarsız, sınırlı kapsam)' };
   // Otomatik seçim: anahtar varsa onu kullan, yoksa Wikipedia (ücretsiz ama sınırlı kapsam)
   if (tavilyKey) return { provider: 'tavily', detail: 'Tavily Search API (TAVILY_API_KEY)' };
   if (braveKey) return { provider: 'brave', detail: 'Brave Search API (BRAVE_API_KEY)' };
-  return { provider: 'wikipedia', detail: 'Wikipedia API (anahtarsız, sınırlı kapsam) — daha iyi sonuç için TAVILY_API_KEY veya BRAVE_API_KEY ekleyin' };
+  return { provider: 'wikipedia', detail: 'Türkçe Wikipedia API (anahtarsız, sınırlı kapsam) — daha geniş sonuç için TAVILY_API_KEY veya BRAVE_API_KEY ekleyin' };
 }

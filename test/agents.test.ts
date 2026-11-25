@@ -66,6 +66,15 @@ describe('Scriptwriter', () => {
     expect(result.title).toBe('Test Senaryosu');
   });
 
+  it('İngilizce kalıntılı taslağı reddeder, Türkçe olmayan ifadeyi hazır sunmaz', async () => {
+    const out = JSON.stringify({
+      title: 'Deprem güvenliği',
+      style_notes: null,
+      sentences: [{ text: '1980 coup’un ardından yeni bir dönem başladı.', fact_ids: ['F001'] }],
+    });
+    await expect(runScriptwriter(makeRun(), fakeProvider(out))).rejects.toMatchObject({ code: 'english_residue' });
+  });
+
   it('model bozuk JSON dönerse bad_json hatası fırlatır', async () => {
     const run = makeRun();
     await expect(runScriptwriter(run, fakeProvider('{not json'))).rejects.toMatchObject({ code: 'bad_json' });
@@ -101,6 +110,18 @@ describe('FactChecker', () => {
     const outcome = await runFactChecker(run, fakeProvider(JSON.stringify({ results: [] })));
     expect(outcome.sentences[0].check).toBe('unsupported');
     expect(outcome.sentences[0].check_note).toContain('reddedildi');
+  });
+
+  it('konuyla alakasız kaynağa dayanan iddiayı unsupported işaretler', async () => {
+    const run = makeRun({
+      topic: 'Türkiye’de deprem güvenliği',
+      sources: [makeSource({ title: 'DİSK tarihi', contentText: 'Türkiye Devrimci İşçi Sendikaları Konfederasyonu 1967 yılında kuruldu. Sendikanın tarihi ve örgütlenmesi.' })],
+      script: scriptWith([{ id: 'S001', text: 'DİSK 1967 yılında kuruldu.', fact_ids: ['F001'] }]),
+    });
+    const outcome = await runFactChecker(run, fakeProvider(JSON.stringify({ results: [{ id: 'S001', verdict: 'supported', note: null }] })));
+    expect(outcome.sentences[0].check).toBe('unsupported');
+    expect(outcome.sentences[0].check_note).toContain('Konu uyumu doğrulanamadı');
+    expect(outcome.report.ok).toBe(false);
   });
 
   it('beklemedeki olguya dayanan cümleyi de unsupported işaretler', async () => {
