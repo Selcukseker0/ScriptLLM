@@ -268,6 +268,108 @@ app.post(
   }),
 );
 
+// ---------- Tek tık otomatik akış: konu → kaynak → olgu → senaryo → denetim ----------
+app.post(
+  '/api/runs/:id/auto',
+  ah(async (req, res) => {
+    const id = parseIdParam(req.params.id);
+    const llm = getLLMProvider();
+    if (!llm.isConfigured()) {
+      sendError(res, 400, 'Otomatik akış için LLM sağlayıcısı gerekli. .env dosyasına LLM_API_KEY ekleyin veya Ollama yapılandırın; sonra sunucuyu yeniden başlatıp tekrar deneyin.', 'llm_not_configured');
+      return;
+    }
+    let run = getRun(id);
+    try {
+      // Kullanıcı kaynak eklemediyse konuya göre arama yap. Arama yoksa uydurma kaynak üretme.
+      if (!run.sources.some((source) => source.status === 'ok' && source.contentText.trim())) {
+        const search = getSearchProvider();
+        if (!search.isConfigured()) {
+          sendError(res, 422, `Konu için kaynak bulunamadı: ${search.describe().detail}. URL ekleyin veya kaynak metni yapıştırın.`, 'no_search_provider');
+          return;
+        }
+        const results = await search.search(run.topic, 8);
+        const existing = new Set(run.sources.map((source) => source.url).filter(Boolean));
+        for (const result of results) {
+          if (existing.has(result.url) || run.sources.length >= 12) continue;
+          run.sources.push({
+            id: newRunId().slice(0, 13), kind: 'url', url: result.url, title: result.title.slice(0, 300),
+            status: 'pending', error: null, contentText: '', contentTruncated: false, fetchedAt: null,
+            addedNote: `Otomatik konu araması (${search.name}): ${result.snippet.slice(0, 200)}`,
+          });
+          existing.add(result.url);
+        }
+        run = saveRun(run);
+      }
+
+      // Bekleyen URL'leri gerçekten indir; erişilemeyenler olgu çıkarmaya alınmaz.
+      for (const source of run.sources.filter((item) => item.kind === 'url' && item.status !== 'ok')) {
+        try {
+          const fetched = await fetchSource(source.url!);
+          source.title = fetched.title;
+          source.url = fetched.finalUrl || source.url;
+          source.contentText = fetched.text;
+          source.contentTruncated = fetched.truncated;
+          source.status = 'ok';
+          source.error = null;
+          source.fetchedAt = new Date().toISOString();
+        } catch (err) {
+          source.status = 'failed';
+          source.error = err instanceof FetchError ? err.message : `Kaynak getirilemedi: ${err instanceof Error ? err.message : String(err)}`;
+          source.fetchedAt = new Date().toISOString();
+        }
+      }
+      run = saveRun(run);
+      if (!run.sources.some((source) => source.status === 'ok' && source.contentText.trim())) {
+        sendError(res, 422, 'Arama sonuçları eklendi ancak kaynak sayfaları getirilemedi. Kaynak hatalarını inceleyip URL/metin ekleyerek tekrar deneyin.', 'no_accessible_sources');
+        return;
+      }
+
+      const research = await runResearcher(run, llm);
+      run.facts = research.facts;
+      run.contradictions = research.contradictions;
+      run.research_notes = research.research_notes;
+      run.script = null;
+      run.factcheck = null;
+      // Tek tık akışında yalnızca kaynak alıntısı doğrulanmış doğrudan olguları taslağa geçir.
+      // Kullanıcı daha sonra her olguyu inceleyip durumunu değiştirebilir.
+      let approved = 0;
+      for (const fact of run.facts) {
+        if (fact.quote_verified && fact.kind === 'fact') {
+          fact.status = 'approved';
+          fact.note = [fact.note, 'Otomatik akışta alıntısı kaynak metninde doğrulandığı için taslağa alındı; kullanıcı incelemesi önerilir.'].filter(Boolean).join(' · ');
+          approved++;
+        }
+      }
+      run = saveRun(run);
+      if (approved === 0) {
+        sendError(res, 422, 'Kaynaklardan alıntısı doğrulanmış doğrudan olgu çıkarılamadı. Uydurma bilgiyle devam edilmedi; kaynakları/metinleri gözden geçirin.', 'no_verified_facts');
+        return;
+      }
+
+      const script = await runScriptwriter(run, llm);
+      run.script = {
+        title: script.title, sentences: script.sentences, estimated_seconds: script.estimated_seconds,
+        style_notes: script.style_notes, generated_at: new Date().toISOString(),
+      };
+      run = saveRun(run);
+
+      const checked = await runFactChecker(run, llm);
+      if (!run.script) throw new Error('Otomatik akışta senaryo kaydı kayboldu.');
+      run.script.sentences = checked.sentences;
+      run.factcheck = checked.report;
+      run = saveRun(run);
+      res.json({ run, completed: true, stages: { sources: run.sources.length, facts: run.facts.length, approved, sentences: run.script?.sentences.length ?? 0, factcheck_ok: checked.report.ok } });
+    } catch (err) {
+      if (err instanceof ResearchAgentError) return sendError(res, 422, err.message, err.code);
+      if (err instanceof ScriptwriterError) return sendError(res, 422, err.message, err.code);
+      if (err instanceof FactCheckError) return sendError(res, 422, err.message, err.code);
+      if (err instanceof SearchError) return sendError(res, err.code === 'rate_limit' ? 429 : err.code === 'auth' ? 401 : 502, err.message, err.code);
+      if (err instanceof LLMError) return sendError(res, llmStatus(err), err.message, err.code);
+      throw err;
+    }
+  }),
+);
+
 app.delete(
   '/api/runs/:id/sources/:sourceId',
   ah(async (req, res) => {

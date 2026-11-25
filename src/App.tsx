@@ -7,7 +7,7 @@ import FactsStep from './components/FactsStep.js';
 import ScriptStep from './components/ScriptStep.js';
 import FactcheckStep from './components/FactcheckStep.js';
 import ExportStep from './components/ExportStep.js';
-import { ErrorBanner, Spinner, fmtDate, fmtDuration } from './components/common.js';
+import { ErrorBanner, InfoBanner, Spinner, fmtDate, fmtDuration } from './components/common.js';
 
 const STEPS = [
   { id: 'sources', name: 'Kaynaklar', desc: 'Bul ve indir' },
@@ -40,6 +40,7 @@ export default function App() {
   const [run, setRun] = useState<ResearchRun | null>(null);
   const [step, setStep] = useState<StepId>('sources');
   const [loading, setLoading] = useState(false);
+  const [autoRunning, setAutoRunning] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -91,9 +92,36 @@ export default function App() {
     void reloadRuns();
   }
 
+  async function runAutomaticFlow(id: string) {
+    setAutoRunning(true);
+    setGlobalError(null);
+    try {
+      const result = await api.autoRun(id);
+      setRun(result.run);
+      setActiveId(id);
+      setStep(result.run.factcheck?.ok ? 'export' : 'factcheck');
+      await reloadRuns();
+    } catch (err) {
+      // Aşamalar her başarılı adımda diske kaydedilir; hata varsa son güvenli durumu aç.
+      try {
+        const { run: partial } = await api.getRun(id);
+        setRun(partial);
+        const idx = highestAvailable(partial);
+        setStep(STEPS[Math.min(idx - 1, 4)].id);
+      } catch {
+        // asıl hata mesajını koru
+      }
+      setGlobalError(err instanceof ApiError ? err.message : 'Otomatik akış tamamlanamadı.');
+      await reloadRuns();
+    } finally {
+      setAutoRunning(false);
+    }
+  }
+
   async function createRun(id: string) {
     await reloadRuns();
     await loadRun(id);
+    void runAutomaticFlow(id);
   }
 
   async function deleteRun(id: string) {
@@ -144,13 +172,20 @@ export default function App() {
                   <span className="pill">Güncellendi {fmtDate(run.updated_at)}</span>
                 </div>
               </div>
-              {run.script && (
-                <div className="toolbar">
+              <div className="toolbar">
+                {(!run.factcheck || !run.factcheck.ok) && (
+                  <button className="btn btn-primary btn-sm" onClick={() => void runAutomaticFlow(run.id)} disabled={autoRunning}>
+                    {autoRunning ? <><Spinner /> Ajan çalışıyor…</> : '▶ Otomatik devam et'}
+                  </button>
+                )}
+                {run.script && <>
                   <a className="btn btn-secondary btn-sm" href={api.exportMarkdownUrl(run.id)} download>↓ .md</a>
                   <a className="btn btn-secondary btn-sm" href={api.exportJsonUrl(run.id)} download>↓ .json</a>
-                </div>
-              )}
+                </>}
+              </div>
             </header>
+
+            {autoRunning && <div style={{ marginBottom: 14 }}><InfoBanner tone="info"><strong>Otomatik ajan çalışıyor.</strong> Konu için kaynak arıyor/indiriyor, doğrulanmış olguları seçiyor, senaryo yazıyor ve cümleleri denetliyor. Bu işlem sağlayıcı kotasına ve ağ hızına bağlı olarak biraz sürebilir.</InfoBanner></div>}
 
             <nav className="stepper" aria-label="Araştırma adımları">
               {STEPS.map((s, i) => {

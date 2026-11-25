@@ -57,12 +57,11 @@ Ollama yerel ağ uç noktasında API anahtarı gerekmez. Performans/kullanılabi
 
 ## Kullanıcı akışı
 
-1. Konu, hedef kitle, ton, hedef süre, URL ve/veya metinle çalışma başlatın.
-2. Aday web kaynaklarını arayın veya URL/metin ekleyin. `Kaynakları Getir` içeriği indirir; indirilemeyenler araştırılmış gibi gösterilmez.
-3. Researcher aşamasını açıkça başlatın. Kaynaklı olguları, alıntıları ve varsa çelişkileri gözden geçirip tek tek onaylayın. Doğrulanamayan alıntılar düşük güvenli `unverified` olarak işaretlenir.
-4. Scriptwriter aşamasını başlatın. Yalnızca onaylanan olgulara referans veren Türkçe senaryo taslağını inceleyin/düzenleyin.
-5. Fact-checker aşamasını açıkça başlatın. Cümleler kaynaklarla karşılaştırılır. API/model hatası varsa denetim başarı sayılmaz; desteklenmeyen veya denetlenmemiş bir taslak “hazır” olarak sunulmaz.
-6. Markdown veya şema sürümü 1 JSON dışa aktarın. Uyarılar, kaynaklar ve cümle↔fact_id eşlemesi export’ta korunur.
+1. Konu, hedef kitle, ton ve süreyi girin. URL/metin eklemek isteğe bağlıdır.
+2. `Konuyu Ver ve Otomatik Başlat` ile tek tıkta akışı çalıştırın. Uygulama kaynak arar/indirir, Researcher olguları çıkarır, yalnızca kaynağında alıntısı doğrulanmış doğrudan olguları otomatik onaylayarak Scriptwriter’a verir ve Fact-checker ile cümleleri denetler. Aşamalar ayrı veri şemaları ve ayrı LLM çağrılarıyla yürür; kullanıcı her adımı tek tek başlatmak zorunda değildir.
+3. Çalışma tamamlanınca kaynakları, alıntıları, olguları, çelişkileri ve cümle↔fact_id eşlemesini inceleyip düzenleyebilirsiniz. Otomatik onaylanan olgular da kullanıcı tarafından reddedilebilir.
+4. Arama, kaynak erişimi veya model aşaması hata verirse uydurma içerikle devam edilmez; son başarıyla kaydedilmiş durum gösterilir ve `Otomatik devam et` ile tekrar denenebilir.
+5. Markdown veya şema sürümü 1 JSON dışa aktarın. Fact-check uyarıları export’ta korunur; desteklenmeyen veya denetlenmemiş taslak “hazır” sayılmaz.
 
 ## Komutlar
 

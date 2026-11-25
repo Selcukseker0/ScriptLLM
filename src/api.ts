@@ -68,6 +68,7 @@ export const api = {
     request<{ run: ResearchRun; added: number; provider: { provider: string; detail: string } }>(`/api/runs/${id}/sources/search`, { method: 'POST', body: JSON.stringify(body) }),
   removeSource: (id: string, sourceId: string) => request<{ run: ResearchRun }>(`/api/runs/${id}/sources/${sourceId}`, { method: 'DELETE' }),
 
+  autoRun: (id: string) => request<{ run: ResearchRun; completed: true; stages: { sources: number; facts: number; approved: number; sentences: number; factcheck_ok: boolean } }>(`/api/runs/${id}/auto`, { method: 'POST' }),
   research: (id: string) => request<{ run: ResearchRun; stats: { batches: number; sources: number; facts: number; contradictions: number } }>(`/api/runs/${id}/research`, { method: 'POST' }),
   patchFacts: (id: string, patches: Array<{ fact_id: string; statement?: string; status?: FactStatus; confidence?: Confidence; note?: string | null }>) =>
     request<{ run: ResearchRun }>(`/api/runs/${id}/facts`, { method: 'PATCH', body: JSON.stringify({ patches }) }),
