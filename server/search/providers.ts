@@ -15,6 +15,43 @@ export interface SearchProvider {
   search(query: string, count: number): Promise<SearchResult[]>;
 }
 
+const SEARCH_STOPWORDS = new Set(['icin', 'için', 'hakkinda', 'hakkında', 'nedir', 'nasil', 'nasıl', 'ne', 've', 'ile', 'bir', 'bu', 'mi', 'mı', 'mu', 'mü', 'the', 'about']);
+
+/** Wikipedia başlık araması dar sorgularda boş dönebilir; noktalama ve eklerden arındırılmış varyantlar hazırla. */
+export function buildSearchQueries(topic: string): string[] {
+  const stripped = topic
+    .replace(/[’'](?:de|da|te|ta|den|dan|ten|tan)\b/gi, '')
+    .replace(/[?!.,:;]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const words = stripped.split(/\s+/).filter((word) => word.length > 2 && !SEARCH_STOPWORDS.has(word.toLocaleLowerCase('tr')));
+  const candidates = [topic.trim(), stripped, words.slice(0, 4).join(' '), words.slice(-2).join(' '), words.slice(0, 2).join(' ')];
+  return [...new Set(candidates.map((q) => q.trim()).filter((q) => q.length >= 2))].slice(0, 4);
+}
+
+/** Arama sağlayıcısında sonuç yoksa, Wikipedia için daha kısa konu varyantlarıyla şeffaf tekrar dener. */
+export async function searchTopic(provider: SearchProvider, topic: string, count: number): Promise<{ results: SearchResult[]; queries: string[] }> {
+  const queries = provider.name === 'wikipedia' ? buildSearchQueries(topic) : [topic];
+  const results: SearchResult[] = [];
+  const seen = new Set<string>();
+  let lastError: unknown;
+  for (const query of queries) {
+    try {
+      const found = await provider.search(query, count);
+      for (const item of found) {
+        if (seen.has(item.url)) continue;
+        seen.add(item.url);
+        results.push(item);
+      }
+    } catch (err) {
+      lastError = err;
+    }
+    if (results.length >= Math.min(4, count)) break;
+  }
+  if (results.length === 0 && lastError) throw lastError;
+  return { results: results.slice(0, count), queries };
+}
+
 export class SearchError extends Error {
   code: 'not_configured' | 'rate_limit' | 'auth' | 'network' | 'bad_response';
   constructor(code: SearchError['code'], message: string) {

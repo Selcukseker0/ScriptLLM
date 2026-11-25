@@ -132,9 +132,27 @@ describe('arama sağlayıcıları', () => {
     vi.stubEnv('SEARCH_PROVIDER', 'tavily');
     vi.stubEnv('TAVILY_API_KEY', 'tvly-test');
     vi.stubGlobal('fetch', vi.fn(async () => new Response('quota', { status: 429 })));
-    const { getSearchProvider, SearchError } = await import('../server/search/providers.js');
+    const { getSearchProvider } = await import('../server/search/providers.js');
     await expect(getSearchProvider().search('x', 5)).rejects.toMatchObject({ code: 'rate_limit' });
     vi.unstubAllGlobals();
+  });
+
+  it('Wikipedia için dar sorgu boşsa daha kısa konu varyantlarıyla tekrar dener', async () => {
+    const { searchTopic } = await import('../server/search/providers.js');
+    const tried: string[] = [];
+    const provider = {
+      name: 'wikipedia' as const,
+      isConfigured: () => true,
+      describe: () => ({ provider: 'wikipedia' as const, configured: true, detail: 'test' }),
+      search: async (query: string) => {
+        tried.push(query);
+        return query === 'deprem güvenliği' ? [{ title: 'Deprem güvenliği', url: 'https://tr.wikipedia.org/wiki/Deprem', snippet: '', provider: 'wikipedia' as const }] : [];
+      },
+    };
+    const result = await searchTopic(provider, "Türkiye'de deprem güvenliği", 8);
+    expect(result.results).toHaveLength(1);
+    expect(tried).toContain('deprem güvenliği');
+    expect(result.queries.length).toBeGreaterThan(1);
   });
 });
 
